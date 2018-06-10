@@ -1,0 +1,65 @@
+fastlane_version "2.55.0"
+xcversion(version: "8.3.3")
+default_platform :ios
+
+project = "SampleAppForCI"
+version_number = get_info_plist_value(path: "./"+project+"/Info.plist", key: "CFBundleShortVersionString")
+build_number = get_info_plist_value(path: "./"+project+"/Info.plist", key: "CFBundleVersion")
+
+platform :ios do
+  before_all do
+    # ENV["SLACK_URL"] = "https://hooks.slack.com/services/..."
+
+    # carthage
+  end
+
+  desc "Run unit test and export to Reports/Test/"
+  lane :test do
+    scan(scheme: "SampleAppForCI", clean: true, code_coverage: true, device: "iPhone 7", output_directory: "Reports/Test/")
+  end
+
+  desc "Code Coverage"
+  lane :code_coverage do
+    slather(output_directory: "Reports/Code_Coverage", proj: project+".xcodeproj", scheme: "SampleAppForCI", cobertura_xml: true, ignore: ["../*"])
+  end
+
+  desc "export archive and ipa"
+  lane :export do |options|
+
+    path = options[:path] ? options[:path] : "Export/" + version_number + "/" + build_number
+
+    gym(
+      project: project+".xcodeproj",
+      scheme: "SampleAppForCI",
+      silent: true,
+      clean: true,
+      output_directory: path, # Destination directory. Defaults to current directory.
+      output_name: project+".ipa",       # specify the name of the .ipa file to generate (including file extension)
+      export_method: "enterprise",
+      archive_path: path+"/"+project+".xcarchive"
+      #sdk: "10.0"  # use SDK as the name or path of the base SDK when building the project.
+    )
+    upload_symbols_to_crashlytics(api_token: '210cae29d9313bf20a7895e227a817eb0d9bac8d')
+    FileUtils.cp("../"+path+"/"+project+".ipa", "../Export/")
+  end
+
+  #
+  # Learn more here: https://github.com/fastlane/setups/blob/master/samples-ios/distribute-beta-build.md 🚀
+  #
+  lane :beta do |values|
+    # Fabric generated this lane for deployment to Crashlytics Beta
+    # set 'export_method' to 'ad-hoc' if your Crashlytics Beta distribution uses ad-hoc provisioning
+    gym(scheme: 'SampleAppForCI', export_method: 'enterprise')
+
+    emails = values[:test_email] ? values[:test_email] : ['jacky_chen@cathaylife.com.tw'] # You can list more emails here
+    groups = values[:test_email] ? values[:test_email] : ['JenkinsTest'] # You can define groups on the web and reference them here
+
+    crashlytics(api_token: '210cae29d9313bf20a7895e227a817eb0d9bac8d',
+             build_secret: 'aed6f83a6637179425f954b9195885e2f6098123bc1034566cc0f6eae3bf7be8',
+                   #emails: emails,
+                   groups: groups,
+                    notes: 'Distributed with fastlane', # Check out the changelog_from_git_commits action
+            notifications: true) # Should this distribution notify your testers via email?
+  end
+
+end
